@@ -1,0 +1,612 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pooraa Threat Console</title>
+<style>
+  :root {
+    --background: #05070b;
+    --panel: #0c1017;
+    --panel-raised: #131925;
+    --line: #232c3b;
+    --text: #edf1f7;
+    --text-muted: #94a0b3;
+    --accent: #5ee6c8;
+    --critical: #ff3d6e;
+    --high: #ff9030;
+    --medium: #f7e04b;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { font-size: 14px; scroll-behavior: smooth; }
+  body {
+    margin: 0; color: var(--text); background-color: var(--background);
+    background-image:
+      radial-gradient(900px 500px at 78% -8%, rgba(255, 61, 110, .17), transparent 70%),
+      radial-gradient(800px 500px at 0% 22%, rgba(94, 230, 200, .08), transparent 70%),
+      linear-gradient(rgba(255, 255, 255, .025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, .025) 1px, transparent 1px);
+    background-size: auto, auto, 36px 36px, 36px 36px;
+    background-repeat: no-repeat, no-repeat, repeat, repeat;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.55;
+  }
+  main {  margin: 0 auto; padding: 28px 16px 72px; }
+  code { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+
+  .topbar {
+    display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between;
+    font-family: var(--mono); font-size: 12px; color: var(--text-muted);
+  }
+  .status-live { color: var(--critical); }
+  .status-live::before {
+    content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--critical); margin-right: 7px; animation: pulse 1.8s infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(255, 61, 110, .7); }
+    70% { box-shadow: 0 0 0 9px rgba(255, 61, 110, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(255, 61, 110, 0); }
+  }
+
+  .hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 28px; align-items: center; margin-top: 26px; }
+  h1 { font-size: clamp(32px, 5vw, 52px); line-height: 1.05; letter-spacing: -.02em; margin: 0; }
+  h1 span {
+    background: linear-gradient(95deg, var(--critical), var(--high) 55%, var(--medium));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero-lede { color: var(--text-muted); margin: 14px 0 0; max-width: 46ch; font-size: 15px; }
+  .confidential {
+    margin-top: 16px; padding: 8px 12px; font-size: 12px; color: var(--text);
+    border: 1px solid rgba(255, 61, 110, .55); border-radius: 6px; background: rgba(255, 61, 110, .09);
+  }
+
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 18px; }
+  .stat {
+    position: relative; overflow: hidden; padding: 12px 14px; border-radius: 10px; text-align: left;
+    background: var(--panel); border: 1px solid var(--line); color: var(--text); font: inherit; cursor: pointer;
+    transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+  }
+  .stat::before { content: ""; position: absolute; inset: 0 0 auto; height: 3px; background: var(--tone); box-shadow: 0 0 14px var(--tone); }
+  .stat:hover { transform: translateY(-2px); border-color: var(--tone); }
+  .stat[aria-pressed="true"] { border-color: var(--tone); box-shadow: 0 0 22px -6px var(--tone); }
+  .stat-number { display: block; font-family: var(--mono); font-size: 34px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .stat-label { color: var(--text-muted); font-size: 12px; }
+
+  .radar-panel { position: relative; min-width: 0; }
+  .radar { display: block; width: 100%; max-width: 520px; margin: 0 auto; }
+  .radar-legend { justify-content: center; margin: 6px 0 0; }
+  .radar-legend i { border-radius: 50%; }
+  .radar-ring { fill: none; stroke: var(--line); }
+  .radar-spoke { stroke: var(--line); }
+  .radar-label { fill: var(--text-muted); font-family: var(--mono); font-size: 12px; text-anchor: middle; }
+  .radar-band { fill: var(--text-muted); font-family: var(--mono); font-size: 10px; opacity: .8; }
+  .sweep { transform-origin: 270px 270px; animation: sweep 7s linear infinite; }
+  @keyframes sweep { to { transform: rotate(360deg); } }
+  .blip { stroke: var(--background); stroke-width: 2px; }
+  .blip-group { cursor: pointer; }
+  .blip-group .blip { transition: r .12s ease; }
+  .blip-group:hover .blip { r: 8px; }
+  .blip-group.dimmed { opacity: .12; }
+  .blip-critical { fill: var(--critical); filter: drop-shadow(0 0 5px var(--critical)); animation: blink 2.6s ease-in-out infinite; }
+  .blip-high { fill: var(--high); }
+  .blip-medium { fill: var(--medium); }
+  @keyframes blink { 50% { opacity: .55; } }
+
+  .tooltip {
+    position: fixed; z-index: 10; max-width: 280px; pointer-events: none; display: none;
+    padding: 8px 10px; border-radius: 6px; background: var(--panel-raised);
+    border: 1px solid var(--line); box-shadow: 0 8px 24px rgba(0, 0, 0, .6); font-size: 12px;
+  }
+  .tooltip strong { display: block; }
+  .tooltip span { color: var(--text-muted); font-family: var(--mono); }
+
+  section { margin-top: 44px; }
+  .section-kicker { font-family: var(--mono); font-size: 12px; color: var(--accent); letter-spacing: .08em; text-transform: uppercase; }
+  h2 { font-size: 22px; margin: 4px 0 4px; letter-spacing: -.01em; }
+  .section-note { color: var(--text-muted); margin: 0 0 14px; max-width: 72ch; }
+
+  .chains { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 12px; }
+  .chain { padding: 14px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); }
+  .chain h3 { margin: 0 0 10px; font-size: 14px; }
+  .chain ol { list-style: none; margin: 0; padding: 0; }
+  .chain li { position: relative; padding: 0 0 12px 22px; }
+  .chain li:last-child { padding-bottom: 0; }
+  .chain li::before {
+    content: ""; position: absolute; left: 3px; top: 7px; width: 9px; height: 9px;
+    border-radius: 50%; background: var(--dot, var(--accent)); box-shadow: 0 0 8px var(--dot, var(--accent));
+  }
+  .chain li:not(:last-child)::after {
+    content: ""; position: absolute; left: 7px; top: 18px; bottom: -5px; width: 2px;
+    background: repeating-linear-gradient(var(--line) 0 4px, transparent 4px 7px);
+    background-size: 100% 14px; animation: flow 1s linear infinite;
+  }
+  @keyframes flow { to { background-position: 0 14px; } }
+  .chain-link {
+    background: none; border: 0; padding: 0 4px; margin-right: 4px; cursor: pointer; border-radius: 4px;
+    font-family: var(--mono); font-size: 12px; color: var(--text); outline: 1px solid var(--line);
+  }
+  .chain-link:hover { outline-color: var(--accent); color: var(--accent); }
+
+  .bars-panel { padding: 14px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--text-muted); margin-bottom: 12px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
+  .bar-row { display: grid; grid-template-columns: 82px minmax(0, 1fr) 34px; gap: 10px; align-items: center; padding: 5px 0; }
+  .bar-name { font-size: 13px; }
+  .bar-total { color: var(--text-muted); font-family: var(--mono); font-size: 12px; text-align: right; }
+  .bar-track { display: flex; gap: 2px; height: 20px; animation: reveal .9s cubic-bezier(.2, .8, .2, 1) backwards; }
+  .bar-segment {
+    height: 100%; min-width: 0; border-radius: 2px; color: #05070b; border: 0; padding: 0; cursor: pointer;
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+  }
+  .bar-segment:last-child { border-radius: 2px 4px 4px 2px; }
+  .bar-segment:hover { filter: brightness(1.2); }
+  @keyframes reveal { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+
+  .controls {
+    position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    padding: 10px 0; background: rgba(5, 7, 11, .88); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line);
+  }
+  .filter-group { display: flex; flex-wrap: wrap; gap: 4px; padding: 3px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+  .filter {
+    background: none; color: var(--text-muted); border: 0; border-radius: 5px; padding: 3px 9px;
+    font: inherit; font-size: 12px; cursor: pointer;
+  }
+  .filter:hover { color: var(--text); }
+  .filter[aria-pressed="true"] { background: var(--text); color: #05070b; }
+  input[type="search"] {
+    flex: 1 1 170px; min-width: 150px; padding: 6px 10px; border-radius: 8px; font: inherit; font-size: 13px;
+    color: var(--text); background: var(--panel); border: 1px solid var(--line);
+  }
+  button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .toggle-all { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+  .result-count { color: var(--text-muted); font-family: var(--mono); font-size: 12px; margin: 10px 0 2px; }
+  .group-title { margin: 22px 0 6px; font-size: 16px; }
+
+  details.finding {
+    --tone: var(--medium); margin-top: 7px; border-radius: 8px; overflow: hidden;
+    background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--tone);
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  details.finding[data-severity="Critical"] { --tone: var(--critical); }
+  details.finding[data-severity="High"] { --tone: var(--high); }
+  details.finding:hover { box-shadow: -6px 0 18px -10px var(--tone); }
+  details.finding.flash { animation: flash 1.4s ease-out; }
+  @keyframes flash { 0%, 40% { box-shadow: 0 0 0 2px var(--tone), 0 0 26px var(--tone); } }
+  summary { display: flex; gap: 10px; align-items: center; padding: 9px 12px; cursor: pointer; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: "+"; color: var(--text-muted); font-family: var(--mono); }
+  details[open] > summary::after { content: "\2212"; }
+  .finding-number { font-family: var(--mono); font-size: 12px; color: var(--text-muted); min-width: 30px; }
+  .finding-title { flex: 1; min-width: 0; font-weight: 600; }
+  .severity-chip { flex: none; font-family: var(--mono); font-size: 11px; color: var(--text); }
+  .severity-chip::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; background: var(--tone); }
+  .finding-body { padding: 2px 12px 12px 52px; }
+  .finding-body p { margin: 0 0 8px; }
+  .label { font-family: var(--mono); font-size: 12px; color: var(--accent); }
+  .evidence { list-style: none; margin: 0 0 8px; padding: 8px 10px; border-radius: 6px; background: #05070b; color: var(--text-muted); }
+  .tags { display: flex; flex-wrap: wrap; gap: 5px; }
+  .tag { font-family: var(--mono); font-size: 11px; color: var(--text-muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; }
+  .tag-confirmed { color: #4cc38a; border-color: #4cc38a; }
+  .tag-partial { color: #6cb6ff; border-color: #6cb6ff; }
+  .tag-unverified { color: #b9a3ff; border-color: #b9a3ff; }
+  .empty { color: var(--text-muted); padding: 24px 0; }
+
+  .footnotes { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+  .footnote { padding: 14px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); }
+  .footnote h3 { margin: 0 0 6px; font-size: 14px; }
+  .footnote ul { margin: 0; padding-left: 18px; color: var(--text-muted); }
+  .footnote li + li { margin-top: 4px; }
+
+  @media (max-width: 820px) {
+    .hero { grid-template-columns: minmax(0, 1fr); }
+    .finding-body { padding-left: 12px; }
+    .controls { position: static; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    html { scroll-behavior: auto; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div class="topbar">
+    <span class="status-live">UNPATCHED</span>
+    <span>Tachyon / Checkout / Frost / Falcon / Stream</span>
+  </div>
+
+  <div class="hero">
+    <div>
+      <h1>Pooraa <span>Threat Console</span></h1>
+      <p class="hero-lede"><span id="totalFindings">52</span> findings across five repos, all on one PostgreSQL shared by every tenant.</p>
+      <div class="stats" id="stats"></div>
+      <p class="confidential"><strong>Confidential.</strong> Describes unpatched, exploitable flaws. No secret values, but file locations are included.</p>
+    </div>
+    <div class="radar-panel">
+      <svg class="radar" id="radar" viewBox="0 0 540 540" role="img" aria-label="Radar of all findings. Inner ring is Critical, middle is High, outer is Medium. Each sector is a repo. The findings list below holds the same data."></svg>
+      <div class="legend radar-legend" id="radarLegend"></div>
+    </div>
+  </div>
+
+  <section>
+    <div class="section-kicker">Kill chains</div>
+    <h2>How the flaws combine</h2>
+    <p class="section-note">Possible paths built from the findings below. None of these was executed, and the third depends on network exposure that was not checked. Click a finding ID to jump to it.</p>
+    <div class="chains" id="chains"></div>
+  </section>
+
+  <section>
+    <div class="section-kicker">Exposure</div>
+    <h2>Findings by repo</h2>
+    <p class="section-note">A finding that spans several repos counts once in each row. Click a segment to filter the list.</p>
+    <div class="bars-panel">
+      <div class="legend" id="legend"></div>
+      <div id="bars"></div>
+    </div>
+  </section>
+
+  <section id="register">
+    <div class="section-kicker">Register</div>
+    <h2>All findings</h2>
+    <div class="controls" role="group" aria-label="Filter findings">
+      <div class="filter-group" id="severityFilters"></div>
+      <div class="filter-group" id="typeFilters"></div>
+      <div class="filter-group" id="repositoryFilters"></div>
+      <input type="search" id="search" placeholder="Search  ( / )" aria-label="Search findings">
+      <button class="toggle-all" id="toggleAll" type="button">Expand all</button>
+    </div>
+    <p class="result-count" id="resultCount" aria-live="polite"></p>
+    <div id="findings"></div>
+  </section>
+
+  <section>
+    <div class="section-kicker">Limits</div>
+    <h2>What this does and does not prove</h2>
+    <div class="footnotes">
+      <div class="footnote">
+        <h3>How to read it</h3>
+        <ul>
+          <li>Code read only. No exploit was run and no live system was tested, so "confirmed" means confirmed by reading code.</li>
+          <li>Tachyon, Checkout, Frost and Falcon were read on POP-57, and Stream on <code>release-2026-10-26</code>, not master.</li>
+          <li>The radar places each finding in the first repo listed for it. Paths are relative to each repo.</li>
+          <li>Tags: Confirmed means traced through the code. Partly confirmed means exposure or impact depends on something unchecked. Re-read means the source was read a second time.</li>
+        </ul>
+      </div>
+      <div class="footnote">
+        <h3>Not covered</h3>
+        <ul>
+          <li>nginx, firewalls, production environment values, log retention, and whether leaked keys still work.</li>
+          <li>Per-handler checks in the larger services were sampled, so more cross-tenant and injection cases probably exist.</li>
+          <li>No <code>npm audit</code> or <code>govulncheck</code> scan ran.</li>
+          <li>Rapid and the Tachyon side of stock reservation (<code>AddInvTx</code>) were not audited.</li>
+          <li>The migrate token and the e-way bill encryption key appeared in the audit's working output. Include them when rotating.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="tooltip" id="tooltip" role="status"></div>
+
+<script>
+const findings = [
+  { type: "Security", severity: "Critical", title: "Reset tokens can be brute-forced without login", detail: "The token is md5(userID + 4-digit number), so about 9,000 guesses per user. A public endpoint confirms a correct guess, and there is no attempt limit in Frost or Tachyon (nginx not checked). Gives full account takeover.", repositories: ["Tachyon", "Frost"], evidence: ["Tachyon account/user/util/util.go:905", "Tachyon account/user/util/util.go:1484", "Frost api/controllers/PasswordController.js:12"], fix: "Use 32 bytes from crypto/rand, store only a hash, limit attempts per IP, and remove the validity check endpoint.", confidence: "confirmed", reread: true },
+  { type: "Security", severity: "Critical", title: "Server files can be read without login", detail: "Frost passes fileName straight to Utils.fileDownload with no path check, on a controller open to the public. That can expose /proc/self/environ and any seller's files. /whatsappcatdownload/:link has the same flaw.", repositories: ["Frost", "Checkout"], evidence: ["Frost api/controllers/tpa/v2/InventoryController.js:111", "Frost config/policies.js:158", "Frost config/routes.js:3819", "Checkout opServices/whatsappDocuments/util/validate.go"], fix: "Add one safeJoin(baseDirectory, name) inside Utils.fileDownload and remove the action from the public policy.", confidence: "confirmed", reread: true },
+  { type: "Security", severity: "Critical", title: "Any logged-in user can read server files", detail: "Any Falcon buyer can use /download/tnc?file= to walk out of the seller directory. At least 10 Frost download actions have the same flaw, and two of them accept absolute paths.", repositories: ["Falcon", "Frost"], evidence: ["Falcon api/controllers/DownloadController.js:161", "Frost api/controllers/mr/IndexController.js:170"], fix: "Take the seller from the session, allow only a plain basename, and check the resolved path stays inside the base directory.", confidence: "confirmed", reread: true },
+  { type: "Security", severity: "Critical", title: "WhatsApp document links can be forged without login", detail: "A link is just base64 of type_id_seller_random, and random is never checked. Anyone can walk through invoices, POs, GRNs and challans across sellers.", repositories: ["Checkout", "Frost", "Tachyon"], evidence: ["Checkout opServices/whatsappDocuments/util/validate.go:57", "Tachyon whatsapp/creator/util/util.go:369", "Frost config/policies.js:55"], fix: "Use HMAC-signed, expiring tokens, and verify them before any lookup.", confidence: "confirmed", reread: true },
+  { type: "Security", severity: "Critical", title: "SQL injection open to logged-in users, in four places", detail: "Stream builds sort and IN filters by concatenation: all 144 Checkout sort filters lack validation, as do 53 of 58 in Tachyon. The ORDER BY value is uppercased, which limits but does not stop an attack, and the path from the Frost gateway was not traced. Gluon's po_article_id (5 sites), Tachyon's customer list state filter and quotation filters, and Checkout's stock dashboard (44 sites) concatenate too. The sanitize middleware is commented out in Checkout, OPS and Gluon, and Tachyon's equivalent is off.", repositories: ["Stream", "Tachyon", "Checkout"], evidence: ["Stream database/postgresql/pgWrap.go:270", "Stream database/postgresql/pgWrap.go:320", "Tachyon gluonServices/purchase/order/main/utils/poItemCalculator/articleNote.go:43", "Tachyon account/company/customer/util/process.go:188", "Checkout opServices/dashboard/stocks/util/util.go:176"], fix: "Whitelist sort values to ASC and DESC, use pg.In for IN filters, and bind every value as a parameter.", confidence: "confirmed", reread: true },
+  { type: "Security", severity: "Critical", title: "Go services trust identity headers with no proof", detail: "Ports 7071, 7072, 9092 and 9093 are published on all interfaces. Anyone who can reach them can act as any user by setting headers. Critical if they are reachable, and the firewall was not checked.", repositories: ["Tachyon", "Checkout"], evidence: ["Tachyon lib/auth.go:33", "Tachyon docker-compose.yml:10", "Checkout lib/auth/util/header.go:22", "Checkout docker-compose.yml:10"], fix: "Bind to the internal network and add a signed gateway credential checked in shared middleware.", confidence: "partial", reread: true },
+  { type: "Security", severity: "Critical", title: "Company checks are bypassed for all Falcon traffic", detail: "CompanyAuth ignores the requested company ID when CONSUMER=mera. Buyers can read another company's users, add addresses to any company and edit any user.", repositories: ["Tachyon", "Falcon"], evidence: ["Tachyon lib/auth.go:106", "Falcon api/controllers/account/UserController.js:23", "Falcon api/controllers/account/AddressController.js:19"], fix: "Compare the target company to the session company in the mera branch, and overwrite company IDs from the session in Falcon.", confidence: "confirmed", reread: true },
+  { type: "Security", severity: "Critical", title: "Credentials are committed to git", detail: "Amazon SP-API keys are hard-coded with no env override. Session secrets are committed in Frost and Falcon, with no env override in Falcon. Tracked env files hold DB, GWS, WhatsApp and migrate credentials, and the migrate token runs DDL over HTTP on the shared DB. Whether these values work in production is unverified.", repositories: ["Checkout", "Tachyon", "Frost", "Falcon", "Stream"], evidence: ["Checkout opServices/amazon/util/util.go:40", "Checkout opServices/amazon/product/util/util.go:57", "Frost config/session.js:21", "Falcon config/session.js:24", "Tachyon deployment/env/S1.env", "Stream mail/lms/emailprovider/sendinblue/sendinblue.go:30"], fix: "Rotate everything, move to a secret store, purge history, and add a secret scanner to CI.", confidence: "partial", reread: true },
+
+  { type: "Security", severity: "High", title: "A forged Referer switches the session tenant", detail: "Any logged-in Frost user can poison their session with another seller's ID. Go CompanyAuth blocks most follow-on calls, but not the ones without it, and Frost-local file paths follow the poisoned ID.", repositories: ["Frost"], evidence: ["api/controllers/account/SellerCompanyController.js:49"], fix: "Allow this branch only for platform admins, set the session only after Tachyon's AccessSeller succeeds, and drop the Referer logic.", confidence: "partial" },
+  { type: "Security", severity: "High", title: "Permission checks fail open", detail: "81 Frost routes pass with no permission check if permission-code is left out, and 27 old-map actions accept any code the client picks. The Go services skip the check when the code is empty.", repositories: ["Frost", "Tachyon", "Checkout"], evidence: ["Frost api/policies/vPcode.js:30", "Tachyon lib/auth.go:259", "Checkout lib/auth/util/util.go:116"], fix: "Keep a route-to-permission map on the server and deny by default.", confidence: "confirmed" },
+  { type: "Security", severity: "High", title: "Plaintext passwords and reset tokens reach logs", detail: "POST bodies and URLs are logged in Tachyon, Frost and Falcon with no redaction, and Tachyon also publishes them to NSQ. Falcon logs the decoded password.", repositories: ["Tachyon", "Frost", "Falcon", "Checkout"], evidence: ["Tachyon lib/logger.go:279", "Frost api/services/Logger.js:96", "Falcon api/services/Logger.js:93", "Checkout lib/logger.go:293"], fix: "Allowlist logged fields, mask tokens in paths, purge existing logs, and rotate exposed passwords.", confidence: "confirmed" },
+  { type: "Security", severity: "High", title: "GSP credentials and SQL values are stored or logged in plain form", detail: "Decrypted GSP credentials land in ewaybill_log and op_einvoice_log. Stream prints every query with its values to stdout, even with Alloy off, which covers password hashes, OTPs and bank details.", repositories: ["Stream", "Checkout"], evidence: ["Stream database/postgresql/telemetry.go:84", "Stream gws/gws.go:109", "Checkout opServices/gws/ewaybill/util/util.go:729", "Checkout opServices/einvoice/utils/util.go:766"], fix: "Log the unformatted query template behind a config flag, and strip credential headers before returning the request.", confidence: "confirmed" },
+  { type: "Security", severity: "High", title: "Documents can be read across tenants by ID", detail: "LR documents, order documents and order numbers resolve by ID with no tenant filter, returning presigned URLs for other tenants' files.", repositories: ["Checkout", "Falcon"], evidence: ["Checkout opServices/deliveryChallan/lr/util/process.go:206", "Checkout opServices/orderTracking/util/util.go:1326", "Checkout services/order/confirm/utils/process.go:117"], fix: "Join the document to its order or shipment and filter by seller, and by customer company for customers.", confidence: "confirmed" },
+  { type: "Security", severity: "High", title: "Customers can read each other's data under one seller", detail: "Invoices, delivery challans and ledger balances are filtered by seller only, so one dealer can see a competing dealer's prices and balance.", repositories: ["Checkout", "Falcon"], evidence: ["Checkout opServices/invoice/invoice/list/utils/process.go:246", "Checkout opServices/process/pack/deliveryChallan/utils/validate.go:229", "Falcon api/controllers/ops/tpa/LedgerController.js:65"], fix: "Enforce fk_customer_company_id for utype=customer, and set customer_company_id from the session in Falcon.", confidence: "confirmed" },
+  { type: "Security", severity: "High", title: "Shopify routes have no auth or webhook HMAC", detail: "Anyone reaching port 9093 can replace or wipe a seller's token, or sync all sellers. Any seller can uninstall any shop.", repositories: ["Checkout"], evidence: ["opServices/shopify/service.go:26", "opServices/shopify/util/process.go:23"], fix: "Verify Shopify HMAC and state on install and webhooks, and scope everything by seller.", confidence: "confirmed" },
+  { type: "Security", severity: "High", title: "Bulk upload trusts a client file_path", detail: "A seller can point file_path at another seller's upload or any path on the shared mount. There is also no size or zip-bomb limit.", repositories: ["Checkout", "Frost"], evidence: ["Checkout services/bulk/producer/utils/validate.go:22", "Frost api/controllers/bulk/OrderController.js:32"], fix: "Accept an upload ID, derive the path on the server, and cap decompressed size.", confidence: "confirmed" },
+  { type: "Security", severity: "High", title: "Debug cookie has a fixed, committed value", detail: "With no login, it adds internal hosts, request bodies and raw backend responses to Frost JSON responses. Falcon has a similar cookie, rated Low on its own because its production value is unknown.", repositories: ["Frost", "Falcon"], evidence: ["Frost api/services/Utils.js:470", "Frost config/myconf.js:5879", "Falcon api/services/Utils.js:270"], fix: "Remove it in production, or bind it to an admin session flag.", confidence: "confirmed" },
+  { type: "Security", severity: "High", title: "Forged emails can lead to stored XSS in Frost", detail: "/lms/webhook/email has no signature check, and the inbox renders HTML unsanitized. The Tachyon storage step was not traced. WhatsApp webhooks are also unsigned.", repositories: ["Frost", "Tachyon"], evidence: ["Frost config/routes.js:2642", "Frost assets/react/components/lms/inbox/uiElements/details.jsx:359", "Tachyon lms/emailWebHook/service.go"], fix: "Verify provider signatures, sanitize with DOMPurify, and tighten the CSP.", confidence: "partial" },
+  { type: "Security", severity: "High", title: "Falcon can be flooded without login", detail: "An amid header creates a new session store per request before any policy runs, growing memory and filling Redis. Not load-tested.", repositories: ["Falcon"], evidence: ["config/http.js:75"], fix: "Create one session middleware at startup, and do not persist anonymous mobile sessions.", confidence: "confirmed" },
+  { type: "Security", severity: "High", title: "Weak password hashing", detail: "One HMAC-SHA256 round with math/rand salts cracks quickly if pra_user leaks through the SQL injection above.", repositories: ["Tachyon", "Stream"], evidence: ["Tachyon account/user/util/util.go:249", "Stream ally/util.go:434"], fix: "Move to argon2id or bcrypt and rehash on login.", confidence: "confirmed" },
+
+  { type: "Security", severity: "Medium", title: "Session lifecycle gaps", detail: "IDs are not regenerated at login, Secure is off, and hijack detection only logs. Falcon sessions also survive a password change.", repositories: ["Frost", "Falcon"], evidence: ["Frost api/policies/isLoggedIn.js:86", "Frost config/session.js:25", "Falcon api/policies/isLoggedIn.js:54", "Falcon config/session.js:39"], fix: "Regenerate on login, set Secure, enforce the check, and keep a per-user session index for revocation.", confidence: "confirmed" },
+  { type: "Security", severity: "Medium", title: "No CSRF tokens", detail: "Many state-changing routes also accept GET. SameSite=Lax limits this but does not cover top-level GETs or same-site sibling hosts.", repositories: ["Frost", "Falcon"], evidence: ["Frost config/security.js:52", "Falcon config/csrf.js"], fix: "Enable CSRF for session routes and declare explicit verbs.", confidence: "confirmed" },
+  { type: "Security", severity: "Medium", title: "No rate limits in the gateways", detail: "Login, OTP and reset have no gateway limits. Accounts can be enumerated, and the per-account lockout can be used to lock out a victim.", repositories: ["Frost", "Falcon", "Tachyon"], evidence: ["Tachyon account/user/util/validate.go:216", "Tachyon account/user/util/process.go:97"], fix: "Add per-IP and per-account limits backed by Redis, and return uniform responses.", confidence: "confirmed" },
+  { type: "Security", severity: "Medium", title: "Internal routes without auth", detail: "About 20 Checkout routes have no auth, including a 0 to 100% tax discount setter and order sync and bulk consumer routes.", repositories: ["Checkout"], evidence: ["services/cart/discount/utils/validate.go:124"], fix: "Require an internal service token.", confidence: "confirmed" },
+  { type: "Security", severity: "Medium", title: "Weak encryption of integration credentials", detail: "AES-ECB is used throughout, with a hard-coded key in e-waybill. Shopify and Amazon tokens are not encrypted.", repositories: ["Checkout", "Stream"], evidence: ["Checkout opServices/ewaybill/utils/constant.go:12", "Stream gws/gws.go:187", "Checkout db/shopifyCredentialMap.go:16"], fix: "Use AES-GCM with a key held in a KMS, and re-encrypt existing rows.", confidence: "confirmed" },
+  { type: "Security", severity: "Medium", title: "Weak TPA authentication", detail: "Tokens come from clock-seeded math/rand, passwords use unsalted MD5, and the token works before the KEY1-3 step.", repositories: ["Checkout"], evidence: ["opServices/tpa/authenticate/util/util.go:163", "opServices/tpa/util/util.go:258"], fix: "Use crypto/rand, a salted KDF, and an active check.", confidence: "confirmed" },
+  { type: "Security", severity: "Medium", title: "No TLS option on backend connections", detail: "Stream's Postgres, MySQL, Mongo and OTLP connections cannot use TLS. Medium, and High if traffic crosses hosts.", repositories: ["Stream"], evidence: ["database/postgresql/pg.go:122", "database/mysql/mysql.go:72", "telemetry/telemetry.go:92"], fix: "Add per-container TLS and CA config with verification on.", confidence: "confirmed" },
+  { type: "Security", severity: "Medium", title: "Credit limit race", detail: "Parallel orders from one customer can both pass and overshoot the limit.", repositories: ["Checkout"], evidence: ["opServices/util/creditLimit.go:265"], fix: "Use UPDATE ... WHERE consumed + ? <= credit_limit and check rows affected.", confidence: "confirmed" },
+  { type: "Security", severity: "Medium", title: "Stored XSS through the cart special instruction", detail: "The value is forwarded raw and rendered unescaped for colleagues and seller staff.", repositories: ["Falcon", "Checkout"], evidence: ["Falcon assets/react/components/checkoutFlow/confirmOrder/index.jsx:465", "Falcon assets/react/components/orderFlow/details/uiElements/specialInstruction.jsx:14"], fix: "Render as plain text.", confidence: "confirmed" },
+  { type: "Security", severity: "Medium", title: "Client pack size reaches pricing", detail: "On quotation carts, a buyer may lower pack size and so the price. End-to-end exploitation is unverified.", repositories: ["Checkout"], evidence: ["calculator/cart/refresh.go:437", "calculator/cart/util/util.go:430"], fix: "Ignore client pack size, or validate it against seller-approved quotation data.", confidence: "partial" },
+  { type: "Security", severity: "Medium", title: "Unencoded values in Go URLs", detail: "About 921 sites in Frost and 113 in Falcon, against a handful of encodeURIComponent calls. Values can add segments or query strings.", repositories: ["Frost", "Falcon"], evidence: ["Frost api/controllers/RegistrationController.js:27", "Falcon api/controllers/PuserController.js:187"], fix: "Route all values through one encoded path builder.", confidence: "partial" },
+  { type: "Security", severity: "Medium", title: "Spoofable or weak webhook checks", detail: "Tachyon's WhatsApp IP checks use a caller-supplied header, the RedLava check is commented out, and email webhooks have no signature.", repositories: ["Tachyon", "Frost"], evidence: ["Tachyon webhook/validator/whatsapp.go:39", "Tachyon webhook/validator/whatsapp.go:264", "Frost api/services/Utils.js:442"], fix: "Verify provider signatures.", confidence: "confirmed" },
+  { type: "Security", severity: "Medium", title: "NSQ messages choose the handler and the user", detail: "The handler method and acting user both come from the message, with no signature. Reachability depends on the network.", repositories: ["Stream"], evidence: ["queue/queue.go:213", "queue/queue.go:331"], fix: "Register an explicit handler whitelist, and sign messages or restrict nsqd.", confidence: "partial" },
+  { type: "Security", severity: "Medium", title: "/metrics has no auth and unbounded labels", detail: "Raw URLs used as labels let attackers create unbounded metric series on the Gin services.", repositories: ["Stream", "Checkout", "Tachyon"], evidence: ["Stream telemetry/metrics_gin.go:75", "Checkout main.go:51", "Tachyon gluon_main.go:48"], fix: "Label unmatched routes as unmatched, and serve /metrics on an internal listener.", confidence: "confirmed" },
+  { type: "Security", severity: "Medium", title: "Weak browser protections", detail: "Frost's CSP allows inline and eval scripts. Falcon loads CDN scripts on the login page without integrity checks, and its CSP only sets frame-ancestors.", repositories: ["Frost", "Falcon"], evidence: ["Frost config/http.js:74", "Falcon config/http.js:115", "Falcon views/layout.ejs:13"], fix: "Self-host scripts or add SRI, and ship a strict script-src CSP.", confidence: "confirmed" },
+  { type: "Security", severity: "Medium", title: "Unproven PDF and dependency risks", detail: "wkhtmltopdf has local file access on, so PDFs may be able to read local files. Falcon's socket.io and busboy versions are below known fixes, and Frost's dependency versions look risky. No npm audit or govulncheck scan ran.", repositories: ["Tachyon", "Checkout", "Frost", "Falcon"], evidence: ["Tachyon lib/pdf.go:68", "Checkout lib/ops_util.go:1304"], fix: "Turn off local file access, disable unused socket hooks, and add dependency scanning to CI.", confidence: "unverified" },
+
+  { type: "Architecture", severity: "High", title: "No gateway-to-service trust", detail: "Authorization is split across layers and fails open. This is the root cause of the identity header, Falcon company check, tenant switch and permission findings.", repositories: ["Tachyon", "Checkout", "Frost", "Falcon"], evidence: ["Tachyon lib/auth.go:33", "Frost api/services/Utils.js:203", "Falcon api/services/Putils.js:15"], fix: "Sign a short-lived internal token and enforce object ownership in one layer.", confidence: "confirmed" },
+  { type: "Architecture", severity: "High", title: "No safety net", detail: "Frost and Falcon have 0 tests, Checkout has 0 first-party tests (including the tax calculator), and Stream has 1 in-house. Tachyon has 36 test files against 1,249 source files. No CI config was found in Tachyon, Frost or Stream.", repositories: ["Tachyon", "Checkout", "Frost", "Falcon", "Stream"], evidence: ["Checkout calculator/ (45 files, 0 tests)"], fix: "Start with golden tests for calculators and table tests for routes, policies and ACL, then add CI.", confidence: "confirmed" },
+  { type: "Architecture", severity: "High", title: "Orders are not idempotent", detail: "A double click or retry can create two orders and double the wallet and inventory holds. There is no cart lock or unique key.", repositories: ["Checkout"], evidence: ["models/cart.go:139", "models/cart.go:418", "db/salesOrder.go:13"], fix: "Lock the cart row, require a conditional status update, and add an idempotency key.", confidence: "confirmed" },
+  { type: "Architecture", severity: "High", title: "Commit errors are ignored", detail: "369 of 406 commits in Tachyon, and 123 direct plus a shared helper in Checkout. Users can see success when nothing was saved.", repositories: ["Tachyon", "Checkout"], evidence: ["Checkout lib/util.go:36", "Tachyon account/user/util/process.go:61"], fix: "Return and propagate the commit error.", confidence: "confirmed" },
+  { type: "Architecture", severity: "High", title: "DB writes and events are not atomic", detail: "There is no outbox, and post-order wallet, inventory and NSQ work runs in plain goroutines. A crash after commit leaves holds unconfirmed.", repositories: ["Checkout", "Tachyon"], evidence: ["Checkout calculator/order/post_order_process.go:25", "Checkout nsq/producer/checkout.go:12"], fix: "Add a transactional outbox with a retrying worker.", confidence: "confirmed" },
+  { type: "Architecture", severity: "High", title: "NSQ has no dead-letter queue or dedupe", detail: "Failed messages are dropped after retries, and redelivery can repeat side effects such as WhatsApp sends.", repositories: ["Tachyon"], evidence: ["tuner/drift/drift.go:96"], fix: "Add a dead-letter topic and idempotency keys.", confidence: "confirmed" },
+  { type: "Architecture", severity: "High", title: "Goroutine panics kill services", detail: "Tachyon has 87 go statements and Checkout has 83, with almost no recover. One nil dereference stops the service.", repositories: ["Tachyon", "Checkout"], evidence: ["Tachyon lib/logger.go:292", "Checkout opServices/tpa/ledger/sync/util/validate.go:74"], fix: "Use a safeGo wrapper with recover and logging.", confidence: "confirmed" },
+  { type: "Architecture", severity: "High", title: "Few timeouts", detail: "Stream's HTTP client, Aqua's server and DB queries have none, and neither Go service has circuit breakers. A stalled GSP call or query can exhaust the pool.", repositories: ["Stream", "Tachyon", "Checkout"], evidence: ["Stream phttp/phttp.go:95", "Stream lib/aqua/rest_server.go:339", "Stream database/postgresql/pg.go:122"], fix: "Add config keys with safe defaults and a shared client with a breaker.", confidence: "confirmed" },
+  { type: "Architecture", severity: "High", title: "E-invoice and e-waybill are not atomic with the GSP", detail: "An IRN can exist only at the GSP, and duplicate e-way bills are possible.", repositories: ["Checkout"], evidence: ["opServices/einvoice/utils/process.go:27", "opServices/gws/einvoice/util/process.go:340"], fix: "Persist the IRN first in its own step, and lock the document per filing.", confidence: "confirmed" },
+  { type: "Architecture", severity: "High", title: "Invoice numbers have no DB unique constraint", detail: "Duplicates can be approved by a user, which matters for GST serial rules. The automatic series itself is locked correctly.", repositories: ["Checkout"], evidence: ["db/opInvoice.go:9", "lib/invoice.go:361"], fix: "Add a unique index on seller and invoice number after cleaning existing data.", confidence: "confirmed" },
+  { type: "Architecture", severity: "High", title: "No central order state machine", detail: "84 direct status writes, the same class of problem as the dchallaned bug.", repositories: ["Checkout"], evidence: ["opServices/util/orderStatus.go:435"], fix: "Add a single transition function with guards and an audit trail.", confidence: "confirmed" },
+  { type: "Architecture", severity: "High", title: "Stream can corrupt data or crash at runtime", detail: "ConnByContainer swaps a global with no lock. The MySQL package can hit a fatal concurrent map write and never uses replicas. The default of 3 retries can run a non-transactional INSERT twice.", repositories: ["Stream"], evidence: ["database/postgresql/pg.go:243", "database/mysql/mysql.go:77", "database/postgresql/pg.go:137"], fix: "Pass the container as a parameter, add a mutex, and default to 0 retries.", confidence: "confirmed" },
+  { type: "Architecture", severity: "High", title: "End-of-life runtime", detail: "Frost and Falcon run on Node 12, end of life April 2022. Builds are not reproducible: Falcon has no lockfile, and Frost's lock is excluded from the Docker build. The Sails split is intentional, but the Node version needs its own ticket.", repositories: ["Frost", "Falcon"], evidence: ["Frost frost_dockerfile:4", "Frost .dockerignore:4", "Falcon Dockerfile:10"], fix: "Use npm ci with a lockfile now, and plan the Node LTS move under a separate ticket.", confidence: "confirmed" },
+
+  { type: "Architecture", severity: "Medium", title: "One shared library for everything", detail: "Stream has unclear versioning, 3 config readers with different precedence and no release checks, and a bad release reaches every Go binary.", repositories: ["Stream"], evidence: ["conf/conf.go:34", "database/mongo/mongo.go:7"], fix: "Split it up, use one config reader, and add CI with -race and real semver tags.", confidence: "confirmed" },
+  { type: "Architecture", severity: "Medium", title: "Money in float64", detail: "Checkout stores money this way with exact-equality price checks, so paise can drift between order, invoice and e-invoice.", repositories: ["Checkout"], evidence: ["db/salesOrderItem.go", "db/opInvoiceItem.go", "services/order/confirm/utils/util.go:54"], fix: "Use a decimal type at money boundaries.", confidence: "confirmed" },
+  { type: "Architecture", severity: "Medium", title: "Other structural gaps", detail: "Auth reads use the replica, so revoked access lasts through replication lag. Frost, Falcon and Checkout do not carry a usable request ID across services, and Checkout starts no first-party trace spans. God packages run to 6,000 or 7,000 lines, Frost and Falcon duplicate services by hand, and Redis, nsqd and the shared /seller disk are single points of failure.", repositories: ["Tachyon", "Checkout", "Frost", "Falcon"], evidence: ["Tachyon lib/auth.go:84", "Checkout lib/logger.go:319", "Tachyon catalog/article/util/util.go", "Checkout opServices/paymentDocument/utils/util.go"], fix: "Read auth from master, propagate a request ID, split by domain, and move temp files to object storage.", confidence: "confirmed" }
+];
+
+const severities = ["Critical", "High", "Medium"];
+const types = ["Security", "Architecture"];
+const repositories = ["Tachyon", "Checkout", "Frost", "Falcon", "Stream"];
+const confidenceLabels = { confirmed: "Confirmed", partial: "Partly confirmed", unverified: "Unverified" };
+const tones = { Critical: "var(--critical)", High: "var(--high)", Medium: "var(--medium)" };
+
+const chains = [
+  { title: "Outsider to every tenant", steps: [
+    { id: "S1", text: "Guess a seller's reset token and take over the account" },
+    { id: "S5", text: "Use that login to inject SQL on the shared database" },
+    { id: "S20", text: "Dump pra_user and crack the weak password hashes" }
+  ] },
+  { title: "No login to live credentials", steps: [
+    { id: "S2", text: "Read server files through the public Frost download" },
+    { id: "S11", text: "Pull the mounted access logs holding plaintext passwords and reset tokens" },
+    { text: "Sign in as those users" }
+  ] },
+  { title: "Repo access to schema change", steps: [
+    { id: "S8", text: "Take the migrate token and env credentials from git" },
+    { id: "S6", text: "Reach a published Go port, if the firewall allows it" },
+    { text: "Run DDL over HTTP on the shared database" }
+  ] },
+  { title: "Forged email to seller session", steps: [
+    { id: "S18", text: "Post a forged inbound email to the unsigned webhook" },
+    { id: "S35", text: "Inline script runs in the inbox under the weak CSP" },
+    { text: "Act inside the seller's logged-in session" }
+  ] }
+];
+
+const state = { severity: "All", type: "All", repository: "All", search: "" };
+const escapeHtml = (text) => text.replace(/[&<>"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[character]));
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const numbers = { Security: 0, Architecture: 0 };
+findings.forEach((finding) => {
+  numbers[finding.type] += 1;
+  finding.number = (finding.type === "Security" ? "S" : "A") + numbers[finding.type];
+});
+const findingByNumber = Object.fromEntries(findings.map((finding) => [finding.number, finding]));
+
+function matches(finding) {
+  if (state.severity !== "All" && finding.severity !== state.severity) return false;
+  if (state.type !== "All" && finding.type !== state.type) return false;
+  if (state.repository !== "All" && !finding.repositories.includes(state.repository)) return false;
+  if (state.search) {
+    const haystack = [finding.title, finding.detail, finding.fix, finding.evidence.join(" "), finding.number].join(" ").toLowerCase();
+    if (!haystack.includes(state.search)) return false;
+  }
+  return true;
+}
+
+function countUp(element, target) {
+  if (reduceMotion) { element.textContent = target; return; }
+  const start = performance.now();
+  const step = (now) => {
+    const progress = Math.min((now - start) / 900, 1);
+    element.textContent = Math.round(target * (1 - Math.pow(1 - progress, 3)));
+    if (progress < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+  setTimeout(() => { element.textContent = target; }, 1000);
+}
+
+function renderStats() {
+  const container = document.getElementById("stats");
+  container.innerHTML = severities.map((severity) =>
+    `<button class="stat" type="button" data-severity="${severity}" aria-pressed="false" style="--tone:${tones[severity]}"><span class="stat-number">0</span><span class="stat-label">${severity}</span></button>`
+  ).join("");
+  container.querySelectorAll(".stat").forEach((button) => {
+    const total = findings.filter((finding) => finding.severity === button.dataset.severity).length;
+    countUp(button.querySelector(".stat-number"), total);
+    button.addEventListener("click", () => {
+      state.severity = state.severity === button.dataset.severity ? "All" : button.dataset.severity;
+      renderRegister();
+      document.getElementById("register").scrollIntoView();
+    });
+  });
+}
+
+function renderRadar() {
+  const center = 270;
+  const bands = { Critical: [34, 92], High: [104, 164], Medium: [176, 226] };
+  const sectorAngle = 360 / repositories.length;
+  const polar = (radius, degrees) => {
+    const radians = (degrees - 90) * Math.PI / 180;
+    return [center + radius * Math.cos(radians), center + radius * Math.sin(radians)];
+  };
+  let markup = `<defs><linearGradient id="sweepFill" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#5ee6c8" stop-opacity="0"/><stop offset="1" stop-color="#5ee6c8" stop-opacity=".28"/></linearGradient></defs>`;
+  [98, 170, 232].forEach((radius) => { markup += `<circle class="radar-ring" cx="${center}" cy="${center}" r="${radius}"/>`; });
+  repositories.forEach((repository, index) => {
+    const angle = index * sectorAngle;
+    const [spokeX, spokeY] = polar(232, angle);
+    const [labelX, labelY] = polar(251, angle + sectorAngle / 2);
+    markup += `<line class="radar-spoke" x1="${center}" y1="${center}" x2="${spokeX.toFixed(1)}" y2="${spokeY.toFixed(1)}"/>`;
+    markup += `<text class="radar-label" x="${labelX.toFixed(1)}" y="${(labelY + 4).toFixed(1)}">${repository}</text>`;
+  });
+  const [sweepX, sweepY] = polar(232, 40);
+  markup += `<g class="sweep"><path d="M${center} ${center} L${center} ${center - 232} A232 232 0 0 1 ${sweepX.toFixed(1)} ${sweepY.toFixed(1)} Z" fill="url(#sweepFill)"/></g>`;
+
+  repositories.forEach((repository, repositoryIndex) => {
+    severities.forEach((severity) => {
+      const group = findings.filter((finding) => finding.repositories[0] === repository && finding.severity === severity);
+      const [inner, outer] = bands[severity];
+      const lanes = severity === "Critical" ? 2 : 3;
+      group.forEach((finding, index) => {
+        const angle = repositoryIndex * sectorAngle + (index + 1) * sectorAngle / (group.length + 1);
+        const radius = inner + (outer - inner) * ((index % lanes) + .5) / lanes;
+        const [x, y] = polar(radius, angle);
+        const size = severity === "Critical" ? 6 : 5;
+        markup += `<g class="blip-group" data-number="${finding.number}"><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="13" fill="transparent"/><circle class="blip blip-${severity.toLowerCase()}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${size}"/></g>`;
+      });
+    });
+  });
+  const radar = document.getElementById("radar");
+  radar.innerHTML = markup;
+
+  const tooltip = document.getElementById("tooltip");
+  radar.addEventListener("mousemove", (event) => {
+    const group = event.target.closest(".blip-group");
+    if (!group) { tooltip.style.display = "none"; return; }
+    const finding = findingByNumber[group.dataset.number];
+    tooltip.innerHTML = `<strong>${escapeHtml(finding.title)}</strong><span>${finding.number} &middot; ${finding.severity} &middot; ${finding.repositories.join(", ")}</span>`;
+    tooltip.style.display = "block";
+    tooltip.style.left = Math.min(event.clientX + 14, window.innerWidth - 296) + "px";
+    tooltip.style.top = (event.clientY + 14) + "px";
+  });
+  radar.addEventListener("mouseleave", () => { tooltip.style.display = "none"; });
+  radar.addEventListener("click", (event) => {
+    const group = event.target.closest(".blip-group");
+    if (group) jumpTo(group.dataset.number);
+  });
+}
+
+function renderChains() {
+  document.getElementById("chains").innerHTML = chains.map((chain) => {
+    const steps = chain.steps.map((step) => {
+      const finding = step.id ? findingByNumber[step.id] : null;
+      const dot = finding ? `style="--dot:${tones[finding.severity]}"` : "";
+      const link = finding ? `<button class="chain-link" type="button" data-number="${step.id}">${step.id}</button>` : "";
+      return `<li ${dot}>${link}${escapeHtml(step.text)}</li>`;
+    }).join("");
+    return `<article class="chain"><h3>${escapeHtml(chain.title)}</h3><ol>${steps}</ol></article>`;
+  }).join("");
+  document.getElementById("chains").addEventListener("click", (event) => {
+    const link = event.target.closest(".chain-link");
+    if (link) jumpTo(link.dataset.number);
+  });
+}
+
+function renderBars() {
+  const legendMarkup = severities.map((severity) =>
+    `<span><i style="background:${tones[severity]}"></i>${severity}</span>`).join("");
+  document.getElementById("legend").innerHTML = legendMarkup;
+  document.getElementById("radarLegend").innerHTML = legendMarkup;
+  const counts = repositories.map((repository) => findings.filter((finding) => finding.repositories.includes(repository)).length);
+  const largest = Math.max(...counts);
+  document.getElementById("bars").innerHTML = repositories.map((repository, index) => {
+    const segments = severities.map((severity) => {
+      const value = findings.filter((finding) => finding.repositories.includes(repository) && finding.severity === severity).length;
+      if (!value) return "";
+      return `<button class="bar-segment" type="button" data-repository="${repository}" data-severity="${severity}" title="${repository}: ${value} ${severity}" aria-label="${repository}: ${value} ${severity}" style="width:${(value / largest * 100).toFixed(2)}%;background:${tones[severity]}">${value}</button>`;
+    }).join("");
+    return `<div class="bar-row"><span class="bar-name">${repository}</span><div class="bar-track">${segments}</div><span class="bar-total">${counts[index]}</span></div>`;
+  }).join("");
+  document.getElementById("bars").addEventListener("click", (event) => {
+    const segment = event.target.closest(".bar-segment");
+    if (!segment) return;
+    Object.assign(state, { repository: segment.dataset.repository, severity: segment.dataset.severity, type: "All" });
+    renderRegister();
+    document.getElementById("register").scrollIntoView();
+  });
+}
+
+function renderFilterGroup(containerId, key, values) {
+  document.getElementById(containerId).innerHTML = ["All", ...values].map((value) =>
+    `<button class="filter" type="button" data-key="${key}" data-value="${value}" aria-pressed="${state[key] === value}">${value}</button>`
+  ).join("");
+}
+
+function renderCard(finding) {
+  const evidence = finding.evidence.map((item) => `<li><code>${escapeHtml(item)}</code></li>`).join("");
+  const repositoryTags = finding.repositories.map((repository) => `<span class="tag">${repository}</span>`).join("");
+  const reread = finding.reread ? `<span class="tag">Re-read</span>` : "";
+  return `<details class="finding" id="finding-${finding.number}" data-severity="${finding.severity}">
+    <summary>
+      <span class="finding-number">${finding.number}</span>
+      <span class="finding-title">${escapeHtml(finding.title)}</span>
+      <span class="severity-chip">${finding.severity}</span>
+    </summary>
+    <div class="finding-body">
+      <p>${escapeHtml(finding.detail)}</p>
+      <p><span class="label">FIX</span> ${escapeHtml(finding.fix)}</p>
+      <ul class="evidence">${evidence}</ul>
+      <div class="tags"><span class="tag tag-${finding.confidence}">${confidenceLabels[finding.confidence]}</span>${reread}${repositoryTags}</div>
+    </div>
+  </details>`;
+}
+
+function renderRegister() {
+  renderFilterGroup("severityFilters", "severity", severities);
+  renderFilterGroup("typeFilters", "type", types);
+  renderFilterGroup("repositoryFilters", "repository", repositories);
+  const visible = findings.filter(matches);
+  const sections = types.map((type) => {
+    const group = visible.filter((finding) => finding.type === type);
+    if (!group.length) return "";
+    const heading = type === "Security" ? "Security risks" : "Architectural gaps";
+    return `<h3 class="group-title">${heading} (${group.length})</h3>${group.map(renderCard).join("")}`;
+  }).join("");
+  document.getElementById("findings").innerHTML = sections || `<p class="empty">No findings match these filters.</p>`;
+  document.getElementById("resultCount").textContent = `Showing ${visible.length} of ${findings.length} findings`;
+  document.getElementById("toggleAll").textContent = "Expand all";
+  document.querySelectorAll(".stat").forEach((button) => button.setAttribute("aria-pressed", state.severity === button.dataset.severity));
+  document.querySelectorAll(".blip-group").forEach((group) => group.classList.toggle("dimmed", !matches(findingByNumber[group.dataset.number])));
+}
+
+function jumpTo(number) {
+  Object.assign(state, { severity: "All", type: "All", repository: "All", search: "" });
+  document.getElementById("search").value = "";
+  renderRegister();
+  const card = document.getElementById(`finding-${number}`);
+  card.open = true;
+  card.scrollIntoView({ block: "center" });
+  card.classList.add("flash");
+  setTimeout(() => card.classList.remove("flash"), 1500);
+}
+
+document.querySelector(".controls").addEventListener("click", (event) => {
+  const button = event.target.closest("button.filter");
+  if (!button) return;
+  state[button.dataset.key] = button.dataset.value;
+  renderRegister();
+});
+document.getElementById("search").addEventListener("input", (event) => {
+  state.search = event.target.value.trim().toLowerCase();
+  renderRegister();
+});
+document.getElementById("toggleAll").addEventListener("click", (event) => {
+  const cards = [...document.querySelectorAll("details.finding")];
+  const open = !cards.every((card) => card.open);
+  cards.forEach((card) => { card.open = open; });
+  event.target.textContent = open ? "Collapse all" : "Expand all";
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "/" && document.activeElement.tagName !== "INPUT") {
+    event.preventDefault();
+    document.getElementById("search").focus();
+  }
+});
+
+document.getElementById("totalFindings").textContent = findings.length;
+renderStats();
+renderRadar();
+renderChains();
+renderBars();
+renderRegister();
+</script>
+</body>
+</html>
